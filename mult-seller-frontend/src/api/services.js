@@ -244,6 +244,7 @@ export const getStoresByCategory = async (categoryIdOrSlug) => {
 export const getStore = async (storeId) => {
   // Try real API first
   try {
+    await ensureClientToken();
     const res = await api.get(`/store/${storeId}`);
     // Accept different API shapes: { success: 1|true, data: {...} } or direct object
     if (res && res.data) {
@@ -269,6 +270,7 @@ export const getStore = async (storeId) => {
 export const getProducts = async (storeId) => {
   // Try real API first
   try {
+    await ensureClientToken();
     const res = await api.get(`/store/${storeId}/products`);
     if (res && res.data) {
       const payload = res.data;
@@ -309,6 +311,8 @@ export const getStoreReviews = async (storeId) => {
   // (GET /store/:id). If that does not contain reviews, we fallback to
   // returning mock data without making another cross-origin request.
   try {
+    await ensureClientToken();
+
     const storeRes = await api.get(`/store/${storeId}`);
     if (storeRes && storeRes.data) {
       const payload = storeRes.data;
@@ -351,6 +355,7 @@ export const getProductReviews = async (productId) => {
 export const submitStoreReview = async (storeId, reviewData) => {
   // Send review to backend: expects { text, rating }
   try {
+    await ensureClientToken();
     const payload = {
       text: reviewData.text ?? reviewData.comment ?? "",
       rating: reviewData.rating ?? null,
@@ -388,6 +393,7 @@ export const submitProductReview = async (productId, reviewData) => {
 // Add to cart (POST /cart)
 export const addToCart = async (cartData) => {
   try {
+    await ensureClientToken();
     const res = await api.post("/cart", cartData);
     console.log("addToCart API raw response:", res);
     console.log("addToCart API response data:", res.data);
@@ -434,6 +440,7 @@ export const addToCart = async (cartData) => {
 // Get cart (GET /cart)
 export const getCart = async () => {
   try {
+    await ensureClientToken();
     const res = await api.get("/cart");
     if (res && res.data) {
       const body = res.data;
@@ -451,6 +458,7 @@ export const getCart = async () => {
 // Empty/clear cart (DELETE /cart/empty)
 export const emptyCart = async () => {
   try {
+    await ensureClientToken();
     const res = await api.delete("/cart/empty");
     console.log("emptyCart API response:", res);
 
@@ -491,6 +499,7 @@ export const emptyCart = async () => {
 // Remove product from cart (DELETE /cart/:key)
 export const removeFromCartAPI = async (key) => {
   try {
+    await ensureClientToken();
     const res = await api.delete(`/cart/${key}`);
     console.log("removeFromCartAPI response:", res);
 
@@ -530,6 +539,7 @@ export const removeFromCartAPI = async (key) => {
 // Update cart (PUT /cart)
 export const updateCartAPI = async (cartData) => {
   try {
+    await ensureClientToken();
     const res = await api.put("/cart", cartData);
     console.log("updateCartAPI raw response:", res);
     console.log("updateCartAPI response data:", res.data);
@@ -595,6 +605,7 @@ export const getWishlist = async () => {
 // Add to wishlist (POST /wishlist/:id)
 export const addToWishlist = async (productId) => {
   try {
+    await ensureClientToken();
     console.log("addToWishlist: Attempting to add product", productId);
     console.log(
       "addToWishlist: Auth token in localStorage:",
@@ -690,6 +701,7 @@ export const addToWishlist = async (productId) => {
 // Remove from wishlist (DELETE /wishlist/:id)
 export const removeFromWishlist = async (productId) => {
   try {
+    await ensureClientToken();
     const res = await api.delete(`/wishlist/${productId}`);
     console.log("removeFromWishlist response:", res);
 
@@ -828,6 +840,7 @@ export const getClientToken = async () => {
 // Auth APIs
 export const registerUser = async (payload) => {
   try {
+    await ensureClientToken();
     // Get client credentials token first
     let token = localStorage.getItem("client_token");
 
@@ -944,36 +957,6 @@ export const getClientCredentialsToken = async (
   return response.data;
 };
 
-// Get user token using OAuth2 Password Grant (not supported by backend, will fail silently)
-export const getUserToken = async (email, password) => {
-  try {
-    const payload = new URLSearchParams();
-    payload.append(
-      "client_id",
-      process.env.REACT_APP_OAUTH_CLIENT_ID || "shopping_oauth_client"
-    );
-    payload.append(
-      "client_secret",
-      process.env.REACT_APP_OAUTH_CLIENT_SECRET || "shopping_oauth_secret"
-    );
-    payload.append("grant_type", "password");
-    payload.append("username", email);
-    payload.append("password", password);
-
-    const tokenUrl =
-      "https://multi-store-api.cloudgoup.com/api/rest/oauth2/token";
-
-    const response = await api.post(tokenUrl, payload, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-
-    return response.data;
-  } catch (error) {
-    // Backend doesn't support password grant - this is expected
-    // Return null to indicate token fetch failed
-    return null;
-  }
-};
 
 export const fetchAndStoreClientToken = async () => {
   const data = await getClientCredentialsToken();
@@ -986,9 +969,24 @@ export const fetchAndStoreClientToken = async () => {
   return data;
 };
 
+export const ensureClientToken = async () => {
+  let clientToken = localStorage.getItem("client_token");
+
+  if (!clientToken) {
+    console.log("No client token found, fetching...");
+    await fetchAndStoreClientToken();
+    clientToken = localStorage.getItem("client_token");
+  }
+
+  return clientToken;
+};
+
+
+
 // Login API function
 export const loginUser = async (email, password) => {
   try {
+    await ensureClientToken();
     // Get client credentials token first
     let token = localStorage.getItem("client_token");
 
@@ -1056,23 +1054,6 @@ export const loginUser = async (email, password) => {
     if (response.status >= 200 && response.status < 300) {
       // Handle both success: 1 and success: true patterns
       if (data.success === 1 || data.success === true) {
-        // Try to get user-specific OAuth token using password grant (silently fail if not supported)
-        try {
-          const userTokenData = await getUserToken(email, password);
-          if (userTokenData && userTokenData.access_token) {
-            console.log("Successfully obtained user OAuth token");
-            // Add the token to the response for downstream consumers
-            data.auth_token = userTokenData.access_token;
-            data.token_type = userTokenData.token_type;
-            data.expires_in = userTokenData.expires_in;
-          }
-        } catch (tokenError) {
-          // Silently ignore OAuth2 errors - backend doesn't support password grant
-          // This is expected and doesn't affect login success
-          console.log(
-            "OAuth2 password grant not supported by backend (expected)"
-          );
-        }
 
         // Normalize/standardize successful response into a stable shape
         const raw = data || {};
@@ -1232,13 +1213,12 @@ const baseUrl = "https://multi-store-api.cloudgoup.com/api/rest";
 // Create new address
 export const createAddress = async (addressData) => {
   try {
+    await ensureClientToken();
+    
     const token =
       localStorage.getItem("auth_token") ||
       sessionStorage.getItem("auth_token");
     const clientToken = localStorage.getItem("client_token");
-    console.log("Creating address with data:", addressData);
-    console.log("Auth token available:", token ? "Yes" : "No");
-    console.log("Client token available:", clientToken ? "Yes" : "No");
 
     // Use auth token first, fallback to client token as temporary workaround
     const tokenToUse = token || clientToken;
@@ -1287,13 +1267,12 @@ export const createAddress = async (addressData) => {
 // Update address by ID
 export const updateAddress = async (addressId, addressData) => {
   try {
+    await ensureClientToken();
+
     const token =
       localStorage.getItem("auth_token") ||
       sessionStorage.getItem("auth_token");
     const clientToken = localStorage.getItem("client_token");
-    console.log("Updating address", addressId, "with data:", addressData);
-    console.log("Auth token available:", token ? "Yes" : "No");
-    console.log("Client token available:", clientToken ? "Yes" : "No");
 
     // Use auth token first, fallback to client token as temporary workaround
     const tokenToUse = token || clientToken;
@@ -1342,13 +1321,12 @@ export const updateAddress = async (addressId, addressData) => {
 // Get address by ID
 export const getAddress = async (addressId) => {
   try {
+    await ensureClientToken();
     const token =
       localStorage.getItem("auth_token") ||
       sessionStorage.getItem("auth_token");
     const clientToken = localStorage.getItem("client_token");
-    console.log("Getting address with ID:", addressId);
-    console.log("Auth token available:", token ? "Yes" : "No");
-    console.log("Client token available:", clientToken ? "Yes" : "No");
+
 
     // Use auth token first, fallback to client token as temporary workaround
     const tokenToUse = token || clientToken;
@@ -1395,7 +1373,7 @@ export const getAddress = async (addressId) => {
 // Get all addresses for the current user
 export const getUserAddresses = async () => {
   try {
-    // Use the configured axios instance - it will handle token injection automatically
+    await ensureClientToken();
     const response = await api.get("/account/address");
 
     const data = response.data;
@@ -1441,6 +1419,7 @@ export const getUserAddresses = async () => {
 // Get current user profile
 export const getProfile = async () => {
   try {
+    await ensureClientToken();
     const response = await api.get("/account");
     const data = response.data;
     // Normalize common patterns
@@ -1465,6 +1444,7 @@ export const getProfile = async () => {
 // Update current user profile
 export const updateProfile = async (payload) => {
   try {
+    await ensureClientToken();
     const response = await api.put("/account", payload);
     console.log("Update profile response:", response.status, response.data);
     if (response.status >= 200 && response.status < 300) {
@@ -1491,6 +1471,7 @@ export const updateProfile = async (payload) => {
 // Change user password
 export const updatePassword = async (payload) => {
   try {
+    await ensureClientToken();
     // Expecting payload: { old_password, new_password, confirm }
     const response = await api.put("/account/password", payload);
     if (response.status >= 200 && response.status < 300) {
@@ -1517,13 +1498,7 @@ export const updatePassword = async (payload) => {
 // Get homepage builder data
 export const getHomePageBuilder = async () => {
   try {
-    // Check if we have client token, if not get one
-    let clientToken = localStorage.getItem("client_token");
-    if (!clientToken) {
-      console.log("No client token found, fetching...");
-      await fetchAndStoreClientToken();
-      clientToken = localStorage.getItem("client_token");
-    }
+    await ensureClientToken();
 
     const response = await api.get("/home_page_builder");
     let data = response.data;
@@ -1577,6 +1552,7 @@ export const getHomePageBuilder = async () => {
 // Delete address by ID
 export const deleteAddress = async (addressId) => {
   try {
+    await ensureClientToken();
     // Normalize id: try numeric first
     let id = addressId;
     if (typeof id === "object") {

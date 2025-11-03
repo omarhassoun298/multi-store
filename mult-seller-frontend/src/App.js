@@ -60,19 +60,6 @@ const AnimatedRoutes = () => {
 };
 
 function App() {
-  // Initialize client token exactly once (guards against StrictMode double-invoke)
-  useInitialApiCall(async () => {
-    try {
-      const mod = await import("./api/services");
-      if (typeof mod.getClientToken === "function") {
-        await mod.getClientToken();
-        console.log("Client token initialized");
-      }
-    } catch (error) {
-      console.error("Failed to initialize client token:", error);
-    }
-  });
-
   return (
     <ThemeProvider>
       <AuthProvider>
